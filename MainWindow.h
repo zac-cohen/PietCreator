@@ -51,7 +51,7 @@ public:
     ~MainWindow();
 
     virtual bool eventFilter( QObject* , QEvent* );
-    
+
 protected:
     void closeEvent(QCloseEvent *event);
 
@@ -83,6 +83,7 @@ private slots:
 
     void slotToggleOutput();
     void slotClearOutputView();
+	void slotToggleStreamableInput();
     void slotStartDebug();
 
     void slotControllerStopped();
@@ -122,6 +123,8 @@ private:
     bool mWaitInt;
     bool mWaitChar;
     bool mWaitingForCoordSelection;
+	bool mStreamInput;
+	bool mStreamableInput;
     QImage mInsertImage;
 };
 

@@ -52,7 +52,9 @@ MainWindow::MainWindow( QWidget *parent ) :
     mModified( false ),
     mWaitInt( false ),
     mWaitChar( false ),
-    mWaitingForCoordSelection( false )
+    mWaitingForCoordSelection( false ),
+	mStreamInput( false ),
+	mStreamableInput( false )
 {
     ui->setupUi( this );
     setWindowIcon( QIcon( ":/piet-16x16.png" ) );
@@ -112,6 +114,7 @@ MainWindow::MainWindow( QWidget *parent ) :
     connect( mMonitor, SIGNAL( pixelSizeChanged( int ) ), SLOT( slotUpdateView( int ) ) );
 
     connect( ui->mClearOutput, SIGNAL( clicked() ), this, SLOT( slotClearOutputView() ) );
+	connect( ui->mToggleStreamableInput, SIGNAL( clicked() ), this, SLOT( slotToggleStreamableInput() ));
 
     connect( ui->mInputEdit, SIGNAL( returnPressed() ), this, SLOT( slotReturnPressed() ) );
 
@@ -185,7 +188,7 @@ void MainWindow::setupToolbar()
     undoAction->setShortcuts(QKeySequence::Undo);
     editMenu->addAction( undoAction );
     ui->mToolBar->addAction(undoAction);
-    
+
     QAction* redoAction = mUndoStack->createRedoAction(this, tr("&Redo"));
     redoAction->setIcon(QIcon::fromTheme( "edit-redo" ));
     redoAction->setShortcuts(QKeySequence::Redo);
@@ -280,8 +283,8 @@ bool MainWindow::eventFilter( QObject* obj, QEvent* event )
             mWaitingForCoordSelection = false;
             int x = i.column();
             int y = i.row();
-            
-            
+
+
             QImage newImage = mModel->autoScale(mInsertImage, -1);
             QSize after = mModel->imageSize();
             bool too_wide = ( x + newImage.size().width() ) >  mModel->imageSize().width();
@@ -309,7 +312,7 @@ bool MainWindow::eventFilter( QObject* obj, QEvent* event )
                 }
                 after = QSize( new_width, new_height );
             }
-            
+
             mUndoHandler->insertImage(x, y, newImage, after);
             mStatusLabel->clear();
             return true;
@@ -564,6 +567,20 @@ void MainWindow::slotToggleOutput()
     }
 }
 
+// Function to allow activation of a "streaming" input, where
+// piet will read the first character from the input widget, if it exists,
+// without forcing the user to hit return
+// Toggling "Off" gives the original behavior of the application
+void MainWindow::slotToggleStreamableInput()
+{
+	if ( mStreamableInput ){
+		ui->mToggleStreamableInput->setText("Toggle Streaming Input On");
+	} else {
+		ui->mToggleStreamableInput->setText("Toggle Streaming Input Off");
+	}
+	mStreamableInput = !mStreamableInput;
+}
+
 void MainWindow::slotStartDebug()
 {
     emit debugStarted( true );
@@ -593,9 +610,30 @@ void MainWindow::slotControllerStarted()
 void MainWindow::slotGetChar()
 {
     qDebug() << "slotGetChar();";
-    ui->mInputEdit->setEnabled( true );
-    ui->mInputEdit->setFocus();
-    mWaitChar = true;
+	if ( mStreamInput ) {
+		QString text = ui->mInputEdit->text();
+		if (text.length() >= 2){
+			mRunController->putChar( text.at( 0 ) );
+			ui->mInputEdit->clear();
+			ui->mInputEdit->insert(text.right(text.length() - 1));
+			mWaitChar = false;
+		} else if (text.length() == 1){
+			mRunController->putChar( text.at( 0 ) );
+			ui->mInputEdit->clear();
+			ui->mInputEdit->insert(text.right(text.length() - 1));
+			mWaitChar = false;
+			mStreamInput = false;
+		} else {
+			ui->mInputEdit->setEnabled( true );
+		    ui->mInputEdit->setFocus();
+		    mWaitChar = true;
+			mStreamInput = false;
+		}
+	} else {
+	    ui->mInputEdit->setEnabled( true );
+	    ui->mInputEdit->setFocus();
+	    mWaitChar = true;
+	}
 }
 
 void MainWindow::slotGetInt()
@@ -606,6 +644,9 @@ void MainWindow::slotGetInt()
     mWaitInt = true;
 }
 
+// Updated to handle "streaming" input, where piet will read the first character
+// from the input widget, if it exists, without forcing the user to hit return
+// Toggling "Off" gives the original behavior of the application
 void MainWindow::slotReturnPressed()
 {
     QString text = ui->mInputEdit->text();
@@ -616,6 +657,16 @@ void MainWindow::slotReturnPressed()
         mRunController->putChar( text.at( 0 ) );
         mWaitChar = false;
         ui->mInputEdit->setEnabled( false );
+		if (text.length() > 1 && mStreamableInput){
+			//If streaming input is active, we re-write the rightmost n-1 chars
+			// back to the QLineEdit widget for inputs
+			mStreamInput = true;
+			ui->mInputEdit->clear();
+			ui->mInputEdit->insert(text.right(text.length() - 1));
+		} else {
+			// original behavior
+			ui->mInputEdit->clear();
+		}
     } else if( mWaitInt ) {
         bool ok = false;
         int i = text.toInt( &ok );
@@ -624,8 +675,10 @@ void MainWindow::slotReturnPressed()
             mWaitInt = false;
             ui->mInputEdit->setEnabled( false );
         }
+		ui->mInputEdit->clear();
     }
-    ui->mInputEdit->clear();
+	// Added to both statements above to handle streaming input 
+	//ui->mInputEdit->clear();
 }
 
 void MainWindow::slotStopController()
